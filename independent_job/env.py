@@ -25,7 +25,7 @@ class Env(object):
         self.mems_max = cfg.mems_max
         self.model_name = cfg.model_name
 
-        self.time = 0
+        self.time = 0 
         self.job_pointer = 0
 
         self.total_energy_consumptipn = 0
@@ -55,8 +55,6 @@ class Env(object):
             task_config = self.task_configs[self.job_pointer]
             task_num = len(task_config.tasks)
             
-            # self.file.write(f"arrvied job {self.job_pointer} {task_config.submit_time}, {self.time}\n")
-            
             arrived_task = torch.cat((torch.tensor(task_config.tasks, \
                                                    dtype=torch.float32), \
                                                     torch.arange(self.total_task_num, \
@@ -68,7 +66,6 @@ class Env(object):
 
             if self.job_pointer == len(self.task_configs):
                 self.job_done = True
-                # self.file.write("job done")
                 break
 
 
@@ -77,7 +74,6 @@ class Env(object):
             self.state_update()
 
             if len(self.step_state.available_task_idx) == 0 or (~torch.isinf(self.step_state.ninf_mask)).sum() == 0:
-                # self.file.write(f"parallel_rollout done, time : {self.time}\n")
                 break
 
             machine_num, task_num = decision_maker(self.step_state)
@@ -87,7 +83,6 @@ class Env(object):
             self.machines[machine_num].allocation(task)
             self.task_full_feature[0, task_num, -2] -= 1
             
-            # self.file.write(f"t{task_num} to m{machine_num}\n")
 
     def episode(self, decision_maker):
         while not (self.job_done and \
@@ -98,14 +93,20 @@ class Env(object):
             self.parallel_rollout(decision_maker)
             self.total_energy_consumptipn += sum([m.energy_consumption() for m in self.machines])
             
-            # self.file.write(f"time : {self.time}, energy : {sum([m.energy_consumption() for m in self.machines])}\n")
             self.time += 1
-        # self.file.write(f"total_energy_consumptipn : {self.total_energy_consumptipn}")
 
     def state_update(self):
         ## machone update
         [m.finished_task_move(self.time) for m in self.machines]
 
+        # task feature update [B, T, F]
+        available_task = ~(self.task_full_feature[..., -2] == 0)
+        available_task = available_task.squeeze(0)
+        self.task_feature = self.task_full_feature[:,available_task, :-1]
+        task_size = self.task_feature.size(1)
+
+        if task_size == 0:
+            return None
         # machine feature update [B, M, F]
         self.machine_feature = torch.stack([m.state for m \
                                             in self.machines]).float()[None, ...].expand(1, self.machine_num, self.nM)
@@ -113,11 +114,6 @@ class Env(object):
                                 for m in self.machine_configs], \
                                     dtype=torch.float32)
         
-        # task feature update [B, T, F]
-        available_task = ~(self.task_full_feature[..., -2] == 0)
-        available_task = available_task.squeeze(0)
-        self.task_feature = self.task_full_feature[:,available_task, :-1]
-        task_size = self.task_feature.size(1)
 
         TASK_IDX = torch.arange(self.machine_num)[:, None].expand(self.machine_num, task_size)
         MACHINE_IDX = torch.arange(task_size)[None, :].expand(self.machine_num, task_size)
@@ -133,12 +129,6 @@ class Env(object):
         self.step_state.task_feature = self.task_feature.clone()
         self.step_state.ninf_mask = self.ninf_mask.clone()
         self.step_state.available_task_idx = self.task_full_feature[:, available_task, -1].squeeze(0).int()
-        
-        # self.file.write("*" * 50)
-        # self.file.write("\nstate update\n")
-        # self.file.write(f"m state : {self.machine_feature}\n")
-        # self.file.write(f"t state : {self.task_feature}\n")
-        # self.file.write(f"task idx : {self.step_state.available_task_idx}\n")
 
         if self.model_name == 'matrix':
             ## D_MT update [B, M, T]
@@ -161,6 +151,13 @@ class Env(object):
         elif self.model_name == 'fit':
             self.machine_feature = torch.cat([self.machine_feature, pfse[None, ...].expand(1, self.machine_num, 4)], dim=-1)
 
-            self.step_state.machine_feature = self.machine_feature.clone()
-            self.step_state.TASK_IDX = TASK_IDX.clone()
-            self.step_state.MACHINE_IDX = MACHINE_IDX.clone()
+            features = torch.cat([self.machine_feature[:, TASK_IDX, :], self.task_feature[:, MACHINE_IDX, :]],
+                        dim=-1).reshape(task_size*self.machine_num, -1)[(~torch.isinf(self.ninf_mask)).reshape(-1,)]
+        
+            cpu_capacity = features[:, 2]
+            pfs = features[:, 3]
+            pss = features[:, 4]
+
+            use_cpu = (cpu_capacity - (features[:, 0] - features[:, 6])) / cpu_capacity
+            features[:, 5] = pss + (pfs - pss) * (use_cpu ** features[:, 5])
+            self.step_state.machine_feature = features[:, [0,1,5,6,7,8,9,10]].clone()

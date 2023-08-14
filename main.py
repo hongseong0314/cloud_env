@@ -4,6 +4,7 @@ import time
 import numpy as np
 import random
 from tqdm import tqdm
+import os
 # base
 from codes.job import Job
 from codes.machine import MachineConfig
@@ -16,20 +17,27 @@ from independent_job.matrix.alg import MatrixAlgorithm
 from independent_job.matrix.model import BGC
 from independent_job.config import matrix_config
 
+from independent_job.fit.alg import FitAlgorithm
+from independent_job.fit.model import Fit
+from independent_job.config import fit_config
+
 # log
-from torch.utils.tensorboard import SummaryWriter
+import wandb
 
 class trainer():
     def __init__(self, cfg):
         self.cfg = cfg
 
         if cfg.model_name == 'matrix':
-            self.cfg.agent = BGC(cfg)
-            self.cfg.algorithm = lambda cfg : MatrixAlgorithm(cfg)
+            self.agent = BGC(cfg)
+            self.algorithm = lambda agent : MatrixAlgorithm(agent)
+            self.name = f"{self.cfg.model_name}-{cfg.model_params['TMHA']}-{cfg.model_params['MMHA']}"
             
-        # elif cfg.model_name == 'fit':
-        #     self.cfg.agent = Agent(cfg)
-        #     self.cfg.algorithm = lambda cfg : FitAlgorithm(cfg)
+        elif cfg.model_name == 'fit':
+            self.agent = Fit(cfg)
+            self.algorithm = lambda cfg : FitAlgorithm(cfg)
+            self.name = f"{self.cfg.model_name}"
+            
 
         # cpu, mem, pf, ps, pe
         self.m_resource_config = [[32, 80, 120, 80, 40], 
@@ -38,15 +46,11 @@ class trainer():
                                     [193.4651, 193.8555,66.8607,101.3687,45.3834], 
                                     [0.9569,0.7257,1.5767,0.7119,1.5324]]
 
-        with open('train.pkl', 'rb') as f:
+        with open('./train.pkl', 'rb') as f:
             self.train_task = pickle.load(f)
-        with open('valid.pkl', 'rb') as f:
+        with open('./valid.pkl', 'rb') as f:
             self.valid_task = pickle.load(f)
-
-    def fit(self):
-        writer = SummaryWriter()
-        energys, make_span = [], []
-
+    def setup(self):
         cpus, mems, pfs, pss, pes = self.m_resource_config
         self.cfg.cpus_max = max(cpus)
         self.cfg.mems_max = max(mems)
@@ -55,10 +59,19 @@ class trainer():
                                  disk_capacity=mem_disk,
                                  pf=pf, ps=ps, pe=pe) for cpu, mem_disk, pf, ps, pe in zip(cpus,\
                 mems, pfs, pss, pes)]
+        name = f"{self.cfg.model_name}"
+        wandb.init(project='cloud')
+        wandb.run.name = self.name
+        wandb.run.save()
+
+        wandb.config.update(self.cfg.to_dict())
+        
+    def fit(self):
+        self.setup()
 
         with tqdm(range(self.cfg.epoch), unit="Run") as runing_bar:
             for i in runing_bar:
-                self.cfg.agent.scheduler.step()
+                self.agent.scheduler.step()
                 loss, clock, energy = self.training()
                 valid_clock, valid_energy = self.valiing()
 
@@ -66,36 +79,36 @@ class trainer():
                                    valid_clock=valid_clock,
                                    valid_energy=valid_energy,)
 
-                self.cfg.file.write(f"loss : {loss}\m")
-                self.cfg.file.write(f"clock : {valid_clock}\m")
-                self.cfg.file.write(f"energy : {valid_energy}\m")
-                writer.add_scalar("Loss/train", loss, i)
-                writer.add_scalar("clock/train", valid_clock, i)
-                writer.add_scalar("energy/train", valid_energy, i)
-        writer.flush()
+                self.cfg.file.write(f"loss : {loss}, clock : {valid_clock}, energy : {valid_energy}\n")
+
+                wandb.log({"Training loss": loss})
+                wandb.log({"Training clock": clock})
+                wandb.log({"Training energy": energy})
+
+                wandb.log({"valid_clock": valid_clock})
+                wandb.log({"valid_energy": valid_energy})
             
-    
     def roll_out(self):
         clock_list, energy_list = [], []
 
         for _ in range(6):
-            algorithm = self.cfg.algorithm(self.cfg)
+            algorithm = self.algorithm(self.agent)
             sim = Env(self.cfg)
             sim.setup()
             sim.episode(algorithm)
             eg = sim.total_energy_consumptipn
-            self.cfg.agent.trajectory(-eg)
+            self.agent.trajectory(-eg)
             clock_list.append(sim.time)
             energy_list.append(eg)
 
-        loss = self.cfg.agent.update_parameters()
+        loss = self.agent.update_parameters()
         return loss, np.mean(clock_list), np.mean(energy_list)
     
     def training(self):
         losses, clocks, energys = [], [], []
-        self.cfg.agent.model.train()
-        self.cfg.agent.model.mode = False
+        self.agent.model.train()
         for i in range(self.cfg.job_len, len(self.train_task))[:self.cfg.train_len]:
+            torch.cuda.empty_cache()
             self.cfg.task_configs = self.train_task[i-self.cfg.job_len:i]
             loss, clock, energy = self.roll_out()
             losses.append(loss)
@@ -105,12 +118,11 @@ class trainer():
 
     def valiing(self):
         clocks, energys = [], []
-        self.cfg.agent.model.eval()
-        self.cfg.agent.model.mode = True
+        self.agent.model.eval()
         for i in range(self.cfg.job_len, len(self.valid_task))[:self.cfg.valid_len]:
             self.cfg.task_configs = self.valid_task[i-self.cfg.job_len:i]
 
-            algorithm = self.cfg.algorithm(self.cfg)
+            algorithm = self.algorithm(self.agent)
             sim = Env(self.cfg)
             sim.setup()
             sim.episode(algorithm)
@@ -127,9 +139,10 @@ if __name__ == '__main__':
     np.random.seed(SEED)
     torch.manual_seed(SEED)
     torch.cuda.manual_seed(SEED) 
-    torch.backends.cudnn.benchmark = False
-    torch.backends.cudnn.deterministic = True
+    # torch.backends.cudnn.benchmark = False
+    # torch.backends.cudnn.deterministic = True
 
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     # epoch
     epoch = 100
     
@@ -138,7 +151,7 @@ if __name__ == '__main__':
     valid_len = 5
     job_len = 3
 
-    model_name = 'matrix'
+    model_name = 'fit'
     
     if model_name == 'matrix':
         # base parm
@@ -171,29 +184,29 @@ if __name__ == '__main__':
                                                                 cfg.model_params['MMHA'],
                                                                 SEED)
         
-    # elif model_name == 'fit':
-    #     cfg = fit_config()
-    #     cfg.model_name = model_name
+    elif model_name == 'fit':
+        cfg = fit_config()
+        cfg.model_name = model_name
         
-    #     # epoch
-    #     cfg.epoch = epoch
+        # epoch
+        cfg.epoch = epoch
         
-    #     # job len
-    #     cfg.train_len = train_len
-    #     cfg.valid_len = valid_len
-    #     cfg.job_len = job_len
+        # job len
+        cfg.train_len = train_len
+        cfg.valid_len = valid_len
+        cfg.job_len = job_len
 
-    #     cfg.device = torch.device('cuda') if torch.cuda.is_available() else "cpu"
-    #     cfg.model_params['device'] = cfg.device
+        cfg.device = torch.device('cuda') if torch.cuda.is_available() else "cpu"
+        cfg.model_params['device'] = cfg.device
 
-    #     # model_name/epoch/train_len/valid_len/job_len//seed
-    #     cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}.pth'.format(
-    #                                                             cfg.model_name,
-    #                                                             cfg.epoch,
-    #                                                             cfg.train_len,
-    #                                                             cfg.valid_len,
-    #                                                             cfg.job_len,
-    #                                                             SEED)
+        # model_name/epoch/train_len/valid_len/job_len//seed
+        cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}.pth'.format(
+                                                                cfg.model_name,
+                                                                cfg.epoch,
+                                                                cfg.train_len,
+                                                                cfg.valid_len,
+                                                                cfg.job_len,
+                                                                SEED)
 
     # model_name
     file_name = "depth.txt"

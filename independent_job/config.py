@@ -20,7 +20,6 @@ def matrix_config():
                         'logit_clipping': 10,
                         'ff_hidden_dim': 64,
 
-                        'eval_type': 'softmax',
                         'nT':5,
                         'nM':2,
 
@@ -31,6 +30,9 @@ def matrix_config():
                         'ms_hidden_dim': 6,
                         'ms_layer1_init': (1/2)**(1/2),
                         'ms_layer2_init': (1/6)**(1/2),
+
+                        'save_path' : None,
+                        'load_path' : None,
                     }
     cfg.optimizer_params = {
                         'optimizer': {
@@ -42,4 +44,25 @@ def matrix_config():
                             'gamma': 0.1
                         }
                     }
+    return cfg
+
+def fit_config():
+    cfg = base_config()
+    cfg.model_params = {
+                        'nT':5,
+                        'nM':2,
+                        'save_path' : None,
+                        'load_path' : None,
+                    }
+    cfg.optimizer_params = {
+                        'optimizer': {
+                            'lr': 1e-3,
+                            'weight_decay': 1e-5
+                        },
+                        'scheduler': {
+                            'milestones': [101, 151],
+                            'gamma': 0.1
+                        }
+                    }
+
     return cfg

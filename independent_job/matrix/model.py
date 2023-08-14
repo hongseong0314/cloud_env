@@ -14,48 +14,53 @@ class BGC():
         self.model = CloudMatrixModel(**cfg.model_params).to(self.device)
         self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])
         self.scheduler = Scheduler(self.optimizer, **cfg.optimizer_params['scheduler'])
-        self.normalize_advantages = True
         self.save_path = cfg.model_params['save_path']
+        self.load_path = cfg.model_params['load_path']
 
-        self.mode = True if cfg.model_params['eval_type'] == 'test' else False
-        if self.mode:
-            self.model.load_state_dict(torch.load(cfg.model_params['path'],
+        
+        if self.load_path:
+            print(f"load weight : {self.load_path}")
+            self.model.load_state_dict(torch.load(cfg.model_params['load_path'],
                                                   map_location=self.device))
             self.model.eval()
 
         self.logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
-        self.logpa_list = torch.zeros(size=(1, 1, 0)).to(cfg.device)
+        self.logpa_list = torch.zeros(size=(1, 0)).to(cfg.device)
         self.reward_list = []
 
     def trajectory(self, reward):
-        self.logpa_sum_list = torch.cat((self.logpa_sum_list, self.logpa_list.sum(dim=2)), dim=1)
+        self.logpa_sum_list = torch.cat((self.logpa_sum_list, self.logpa_list.sum(dim=-1)[None, ...]), dim=-1)
         self.reward_list.append(reward)
 
-        self.logpa_list = torch.zeros(size=(1, 1, 0)).to(self.device)
+        self.logpa_list = torch.zeros(size=(1, 0)).to(self.device)
 
     def model_save(self):
         torch.save(self.model.state_dict(), self.save_path)
 
     def decision(self, machine_feature, task_feature, D_TM, ninf_mask):
-        if self.mode:
+        machine_feature = machine_feature.to(self.device)
+        task_feature = task_feature.to(self.device)
+        D_TM = D_TM.to(self.device)
+        ninf_mask = ninf_mask.to(self.device)
+        
+        if self.model.training:
+            probs = \
+                    self.model(machine_feature, task_feature, D_TM, ninf_mask)
+            # [B, M*T]
+            dist = torch.distributions.Categorical(probs)
+            task_selected = dist.sample()
+            # [B,] 
+            logpa = dist.log_prob(task_selected)
+            # [B,]
+            self.logpa_list = torch.cat((self.logpa_list, logpa[None, ...]), dim=-1)
+            return task_selected.item()
+
+        else:
             with torch.no_grad():
                probs = \
                         self.model(machine_feature, task_feature, D_TM, ninf_mask)
             task_selected = probs.argmax(dim=1)
-            logpa = None
-            return task_selected[0]
-
-        else:
-            probs = \
-                    self.model(machine_feature, task_feature, D_TM, ninf_mask)
-            # [B, 1, M*T]
-            dist = torch.distributions.Categorical(probs)
-            task_selected = dist.sample().reshape(1, 1)
-            # [B, 1]
-            logpa = dist.log_prob(task_selected)
-            # [B, 1]
-            self.logpa_list = torch.cat((self.logpa_list, logpa[:, :, None]), dim=2)
-            return task_selected[0][0]
+            return task_selected.item()
 
     def update_parameters(self):
         rewards = torch.tensor(self.reward_list).to(self.device)
