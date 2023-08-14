@@ -151,7 +151,7 @@ if __name__ == '__main__':
     valid_len = 5
     job_len = 3
 
-    model_name = 'fit'
+    model_name = 'matrix'
     
     if model_name == 'matrix':
         # base parm
@@ -170,8 +170,8 @@ if __name__ == '__main__':
         cfg.model_params['device'] = cfg.device
 
         # encoder type
-        cfg.model_params['TMHA'] = 'depth'
-        cfg.model_params['MMHA'] = 'depth'
+        cfg.model_params['TMHA'] = 'mix'
+        cfg.model_params['MMHA'] = 'mix'
 
         # model_name/epoch/train_len/valid_len/job_len/TMHA/MMHA/seed
         cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}.pth'.format(

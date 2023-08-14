@@ -105,8 +105,6 @@ class Env(object):
         self.task_feature = self.task_full_feature[:,available_task, :-1]
         task_size = self.task_feature.size(1)
 
-        if task_size == 0:
-            return None
         # machine feature update [B, M, F]
         self.machine_feature = torch.stack([m.state for m \
                                             in self.machines]).float()[None, ...].expand(1, self.machine_num, self.nM)
@@ -129,6 +127,9 @@ class Env(object):
         self.step_state.task_feature = self.task_feature.clone()
         self.step_state.ninf_mask = self.ninf_mask.clone()
         self.step_state.available_task_idx = self.task_full_feature[:, available_task, -1].squeeze(0).int()
+
+        if task_size == 0:
+            return None
 
         if self.model_name == 'matrix':
             ## D_MT update [B, M, T]
