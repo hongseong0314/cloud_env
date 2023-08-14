@@ -16,6 +16,9 @@ from independent_job.matrix.alg import MatrixAlgorithm
 from independent_job.matrix.model import BGC
 from independent_job.config import matrix_config
 
+# log
+from torch.utils.tensorboard import SummaryWriter
+
 class trainer():
     def __init__(self, cfg):
         self.cfg = cfg
@@ -41,6 +44,7 @@ class trainer():
             self.valid_task = pickle.load(f)
 
     def fit(self):
+        writer = SummaryWriter()
         energys, make_span = [], []
 
         cpus, mems, pfs, pss, pes = self.m_resource_config
@@ -62,15 +66,19 @@ class trainer():
                                    valid_clock=valid_clock,
                                    valid_energy=valid_energy,)
 
-                self.cfg.file.write(f"loss : {loss}")
-                self.cfg.file.write(f"clock : {valid_clock}")
-                self.cfg.file.write(f"energy : {valid_energy}")
+                self.cfg.file.write(f"loss : {loss}\m")
+                self.cfg.file.write(f"clock : {valid_clock}\m")
+                self.cfg.file.write(f"energy : {valid_energy}\m")
+                writer.add_scalar("Loss/train", loss, i)
+                writer.add_scalar("clock/train", valid_clock, i)
+                writer.add_scalar("energy/train", valid_energy, i)
+        writer.flush()
             
     
     def roll_out(self):
         clock_list, energy_list = [], []
 
-        for _ in tqdm(range(6)):
+        for _ in range(6):
             algorithm = self.cfg.algorithm(self.cfg)
             sim = Env(self.cfg)
             sim.setup()
@@ -87,7 +95,7 @@ class trainer():
         losses, clocks, energys = [], [], []
         self.cfg.agent.model.train()
         self.cfg.agent.model.mode = False
-        for i in tqdm(range(self.cfg.job_len, len(self.train_task))[:self.cfg.train_len]):
+        for i in range(self.cfg.job_len, len(self.train_task))[:self.cfg.train_len]:
             self.cfg.task_configs = self.train_task[i-self.cfg.job_len:i]
             loss, clock, energy = self.roll_out()
             losses.append(loss)
@@ -99,7 +107,7 @@ class trainer():
         clocks, energys = [], []
         self.cfg.agent.model.eval()
         self.cfg.agent.model.mode = True
-        for i in tqdm(range(self.cfg.job_len, len(self.valid_task))[:self.cfg.valid_len]):
+        for i in range(self.cfg.job_len, len(self.valid_task))[:self.cfg.valid_len]:
             self.cfg.task_configs = self.valid_task[i-self.cfg.job_len:i]
 
             algorithm = self.cfg.algorithm(self.cfg)
@@ -188,7 +196,7 @@ if __name__ == '__main__':
     #                                                             SEED)
 
     # model_name
-    file_name = "data.txt"
+    file_name = "depth.txt"
     with open(file_name, "a") as file:
         cfg.file = file
         st = time.time()
