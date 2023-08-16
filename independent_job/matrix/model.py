@@ -16,6 +16,8 @@ class BGC():
         self.scheduler = Scheduler(self.optimizer, **cfg.optimizer_params['scheduler'])
         self.save_path = cfg.model_params['save_path']
         self.load_path = cfg.model_params['load_path']
+        self.skip = cfg.model_params['skip']
+        self.machine_num = cfg.machines_number
 
         
         if self.load_path:
@@ -41,7 +43,13 @@ class BGC():
         machine_feature = machine_feature.to(self.device)
         task_feature = task_feature.to(self.device)
         D_TM = D_TM.to(self.device)
-        ninf_mask = ninf_mask.to(self.device)
+        
+        if self.skip:
+            skip_mask = torch.zeros(size=(1, self.machine_num, 1))
+            ninf_mask = torch.cat((skip_mask, ninf_mask), dim=2)
+            ninf_mask = ninf_mask.to(self.device)
+        else:
+            ninf_mask = ninf_mask.to(self.device)
         
         if self.model.training:
             probs = \
@@ -245,10 +253,11 @@ class Matrix_Decoder(nn.Module):
     def __init__(self, **model_params):
         super().__init__()
         self.model_params = model_params
+        self.skip = self.model_params['skip']
         embedding_dim = self.model_params['embedding_dim']
         head_num = self.model_params['head_num']
         qkv_dim = self.model_params['qkv_dim']
-
+ 
         # no job action shape : (1, 1, embedding_dim)
         self.Wq_1 = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
         self.Wq_2 = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
@@ -262,15 +271,22 @@ class Matrix_Decoder(nn.Module):
         self.v = None  # saved value, for multi-head_attention
         self.single_head_key = None  # saved key, for single-head attention
 
+        if self.skip:
+            self.encoded_skip = nn.Parameter(torch.rand(1, 1, embedding_dim))
+
     def set_kv(self, encoded_jobs):
         # encoded_jobs.shape: (B, T, embedding)
         batch_size = encoded_jobs.size(0)
         embedding_dim = self.model_params['embedding_dim']
         head_num = self.model_params['head_num']
 
+        if self.skip:
+            encoded_skip = self.encoded_skip.expand(size=(batch_size, 1, embedding_dim))
+            encoded_jobs = torch.cat((encoded_skip, encoded_jobs), dim=1)
+        
         self.k = reshape_by_heads(self.Wk(encoded_jobs), head_num=head_num)
         self.v = reshape_by_heads(self.Wv(encoded_jobs), head_num=head_num)
-        # shape: (B,H, T, qkv_dim)
+        # shape: (B, H, T, qkv_dim)
         self.single_head_key = encoded_jobs.transpose(1, 2)
         # shape: (B, embedding, T)
 
@@ -279,7 +295,8 @@ class Matrix_Decoder(nn.Module):
         # encoded_jobs.shape: (B, T, embedding)
         # ninf_mask.shape: (B, J, T)
         self.set_kv(encoded_jobs)
-        task_num = encoded_jobs.size(1)
+        if self.skip:
+            task_num = encoded_jobs.size(1) + 1
         machine_num = encoded_machine.size(1)
         sqrt_embedding_dim = self.model_params['sqrt_embedding_dim']
         logit_clipping = self.model_params['logit_clipping']
@@ -300,7 +317,6 @@ class Matrix_Decoder(nn.Module):
         #######################################################
         score = torch.matmul(mh_atten_out, self.single_head_key)
         # shape: (B, M, T)
-
 
         score_scaled = score / sqrt_embedding_dim
         # shape: (B, M, T)
@@ -324,7 +340,6 @@ class Matrix_Decoder(nn.Module):
 
         batch_size = q.size(0)
         n = q.size(2)
-        T_cnt_plus_1 = k.size(2)
 
         head_num = self.model_params['head_num']
         qkv_dim = self.model_params['qkv_dim']

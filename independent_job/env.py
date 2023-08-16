@@ -77,11 +77,15 @@ class Env(object):
                 break
 
             machine_num, task_num = decision_maker(self.step_state)
-            cpu, mem, duration = self.task_full_feature[0, task_num, [0, 1, 3]]
-            task = torch.tensor([self.time, self.time + duration, cpu, mem], \
-                                dtype=torch.float32)[None, ...]
-            self.machines[machine_num].allocation(task)
-            self.task_full_feature[0, task_num, -2] -= 1
+
+            if machine_num == None and task_num == None:
+                break
+            else:
+                cpu, mem, duration = self.task_full_feature[0, task_num, [0, 1, 3]]
+                task = torch.tensor([self.time, self.time + duration, cpu, mem], \
+                                    dtype=torch.float32)[None, ...]
+                self.machines[machine_num].allocation(task)
+                self.task_full_feature[0, task_num, -2] -= 1
             
 
     def episode(self, decision_maker):

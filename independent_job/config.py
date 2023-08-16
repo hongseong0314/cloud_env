@@ -33,6 +33,7 @@ def matrix_config():
 
                         'save_path' : None,
                         'load_path' : None,
+                        'skip':False,
                     }
     cfg.optimizer_params = {
                         'optimizer': {
