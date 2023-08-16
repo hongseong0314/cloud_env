@@ -297,6 +297,8 @@ class Matrix_Decoder(nn.Module):
         self.set_kv(encoded_jobs)
         if self.skip:
             task_num = encoded_jobs.size(1) + 1
+        else:
+            task_num = encoded_jobs.size(1)
         machine_num = encoded_machine.size(1)
         sqrt_embedding_dim = self.model_params['sqrt_embedding_dim']
         logit_clipping = self.model_params['logit_clipping']
