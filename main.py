@@ -50,6 +50,7 @@ class trainer():
             self.train_task = pickle.load(f)
         with open('./valid.pkl', 'rb') as f:
             self.valid_task = pickle.load(f)
+
     def setup(self):
         cpus, mems, pfs, pss, pes = self.m_resource_config
         self.cfg.cpus_max = max(cpus)
@@ -59,7 +60,7 @@ class trainer():
                                  disk_capacity=mem_disk,
                                  pf=pf, ps=ps, pe=pe) for cpu, mem_disk, pf, ps, pe in zip(cpus,\
                 mems, pfs, pss, pes)]
-        name = f"{self.cfg.model_name}"
+
         wandb.init(project='cloud')
         wandb.run.name = self.name
         wandb.run.save()
@@ -81,17 +82,18 @@ class trainer():
 
                 self.cfg.file.write(f"loss : {loss}, clock : {valid_clock}, energy : {valid_energy}\n")
 
-                wandb.log({"Training loss": loss})
-                wandb.log({"Training clock": clock})
-                wandb.log({"Training energy": energy})
-
-                wandb.log({"valid_clock": valid_clock})
-                wandb.log({"valid_energy": valid_energy})
+                wandb.log({"Training loss": loss,
+                           "Training clock": clock,
+                           "Training energy": energy,
+                           "valid_clock": valid_clock,
+                           "valid_energy": valid_energy})
+                
             
     def roll_out(self):
         clock_list, energy_list = [], []
 
         for _ in range(6):
+            random.shuffle(cfg.machine_configs)
             algorithm = self.algorithm(self.agent)
             sim = Env(self.cfg)
             sim.setup()
@@ -142,7 +144,7 @@ if __name__ == '__main__':
     # torch.backends.cudnn.benchmark = False
     # torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     # epoch
     epoch = 100
     
@@ -157,6 +159,7 @@ if __name__ == '__main__':
         # base parm
         cfg = matrix_config()
         cfg.model_name = model_name
+        cfg.model_params['skip'] = False
 
         # epoch
         cfg.epoch = epoch
@@ -170,11 +173,11 @@ if __name__ == '__main__':
         cfg.model_params['device'] = cfg.device
 
         # encoder type
-        cfg.model_params['TMHA'] = 'mix'
-        cfg.model_params['MMHA'] = 'mix'
+        cfg.model_params['TMHA'] = 'depth'
+        cfg.model_params['MMHA'] = 'depth'
 
         # model_name/epoch/train_len/valid_len/job_len/TMHA/MMHA/seed
-        cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}.pth'.format(
+        cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}_skip.pth'.format(
                                                                 cfg.model_name,
                                                                 cfg.epoch,
                                                                 cfg.train_len,
