@@ -8,7 +8,7 @@ from torch.optim.lr_scheduler import MultiStepLR as Scheduler
 class Fit(object):
     def __init__(self,cfg):
         super().__init__()
-        self.device = cfg.device
+        self.device = cfg.model_params['device']
         self.gamma = 0.999
         self.model = Qnet(**cfg.model_params).to(self.device)
         self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])

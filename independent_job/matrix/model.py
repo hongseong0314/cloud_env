@@ -9,7 +9,7 @@ from torch.optim.lr_scheduler import MultiStepLR as Scheduler
 
 class BGC():
     def __init__(self, cfg):
-        self.device = cfg.device
+        self.device = cfg.model_params['device']
         self.gamma = 0.999
         self.model = CloudMatrixModel(**cfg.model_params).to(self.device)
         self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])
