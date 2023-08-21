@@ -112,7 +112,7 @@ class Env(object):
         # machine feature update [B, M, F]
         self.machine_feature = torch.stack([m.state for m \
                                             in self.machines]).float()[None, ...].expand(1, self.machine_num, self.nM)
-        pfse = torch.tensor([[m.cpu_capacity, m.pf, m.ps, m.pe] \
+        pfse = torch.tensor([[m.cpu_capacity, m.pf, m.ps, m.pe, m.mips] \
                                 for m in self.machine_configs], \
                                     dtype=torch.float32)
         
@@ -139,7 +139,8 @@ class Env(object):
             ## D_MT update [B, M, T]
             # make span
             make_span = self.task_feature[None, ..., 3].expand(1, self.machine_num, task_size)
-
+            mips = pfse[:, 4][None, :, None]
+            make_span = make_span * mips
             # energy
             cpu_capacity = pfse[:, 0][None, :, None]
             pfs = pfse[:, 1][None, :, None]
@@ -154,7 +155,7 @@ class Env(object):
             self.step_state.D_TM = self.D_TM.clone()
 
         elif self.model_name == 'fit':
-            self.machine_feature = torch.cat([self.machine_feature, pfse[None, ...].expand(1, self.machine_num, 4)], dim=-1)
+            self.machine_feature = torch.cat([self.machine_feature, pfse[None, ...].expand(1, self.machine_num, 5)], dim=-1)
 
             features = torch.cat([self.machine_feature[:, TASK_IDX, :], self.task_feature[:, MACHINE_IDX, :]],
                         dim=-1).reshape(task_size*self.machine_num, -1)[(~torch.isinf(self.ninf_mask)).reshape(-1,)]
@@ -163,6 +164,8 @@ class Env(object):
             pfs = features[:, 3]
             pss = features[:, 4]
 
-            use_cpu = (cpu_capacity - (features[:, 0] - features[:, 6])) / cpu_capacity
+            use_cpu = (cpu_capacity - (features[:, 0] - features[:, 7])) / cpu_capacity
             features[:, 5] = pss + (pfs - pss) * (use_cpu ** features[:, 5])
-            self.step_state.machine_feature = features[:, [0,1,5,6,7,8,9,10]].clone()
+            features[:, 10] = features[:, 10] * features[:, 6]
+            # cpu, mem, energy, cpu, mem, disk, duration, inster
+            self.step_state.machine_feature = features[:, [0,1,5,7,8,9,10,11]].clone()

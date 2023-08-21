@@ -3,7 +3,7 @@ import torch
 class MachineConfig(object):
     def __init__(self, cpu_capacity, memory_capacity, disk_capacity,
                  cpu=None, memory=None, disk=None,
-                 pf=None, ps=None, pe=None):
+                 pf=None, ps=None, pe=None, mips=None):
         self.cpu_capacity = cpu_capacity
         self.memory_capacity = memory_capacity
         self.disk_capacity = disk_capacity
@@ -11,7 +11,7 @@ class MachineConfig(object):
         self.cpu = cpu_capacity if cpu is None else cpu
         self.memory = memory_capacity if memory is None else memory
         self.disk = disk_capacity if disk is None else disk
-
+        self.mips = 0 if mips is None else mips
         self.pf = 0 if pf is None else pf
         self.ps = 0 if ps is None else ps
         self.pe = 0 if pe is None else pe
@@ -24,7 +24,7 @@ class Machine:
         self.cpu = machine_config.cpu
         self.memory = machine_config.memory
         self.disk = machine_config.disk
-
+        self.mips = machine_config.mips
         self.pf = machine_config.pf
         self.ps = machine_config.ps
         self.pe = machine_config.pe

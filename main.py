@@ -3,9 +3,10 @@ import torch
 import time
 import numpy as np
 import random
-from tqdm import tqdm
 import os
+import copy
 # base
+from tqdm import tqdm
 from codes.job import Job
 from codes.machine import MachineConfig
 
@@ -111,7 +112,7 @@ class trainer():
         self.agent.model.train()
         for i in range(self.cfg.job_len, len(self.train_task))[:self.cfg.train_len]:
             torch.cuda.empty_cache()
-            self.cfg.task_configs = self.train_task[i-self.cfg.job_len:i]
+            self.cfg.task_configs = copy.deepcopy(self.train_task[i-self.cfg.job_len:i])
             loss, clock, energy = self.roll_out()
             losses.append(loss)
             clocks.append(clock)
@@ -122,7 +123,7 @@ class trainer():
         clocks, energys = [], []
         self.agent.model.eval()
         for i in range(self.cfg.job_len, len(self.valid_task))[:self.cfg.valid_len]:
-            self.cfg.task_configs = self.valid_task[i-self.cfg.job_len:i]
+            self.cfg.task_configs = copy.deepcopy(self.valid_task[i-self.cfg.job_len:i])
 
             algorithm = self.algorithm(self.agent)
             sim = Env(self.cfg)
@@ -144,7 +145,7 @@ if __name__ == '__main__':
     # torch.backends.cudnn.benchmark = False
     # torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     # epoch
     epoch = 100
     
@@ -153,7 +154,7 @@ if __name__ == '__main__':
     valid_len = 5
     job_len = 3
 
-    model_name = 'matrix'
+    model_name = 'fit'
     
     if model_name == 'matrix':
         # base parm
