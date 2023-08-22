@@ -41,11 +41,12 @@ class trainer():
             
 
         # cpu, mem, pf, ps, pe
-        self.m_resource_config = [[32, 80, 120, 80, 40], 
-                                    [1, 2, 3, 1.5, 1], 
-                                    [675.7838, 643.8629,258.2628,332.1814,119.0417], 
-                                    [193.4651, 193.8555,66.8607,101.3687,45.3834], 
-                                    [0.9569,0.7257,1.5767,0.7119,1.5324]]
+        self.m_resource_config = [[32, 80, 120, 80, 40],
+                                    [1, 2, 3, 1.5, 1],
+                                    [675.7838, 643.8629,258.2628,332.1814,119.0417],
+                                    [193.4651, 193.8555,66.8607,101.3687,45.3834],
+                                    [0.9569,0.7257,1.5767,0.7119,1.5324],
+                                    [1.5,1.3,0.5,1.0,0.8]]
 
         with open('./train.pkl', 'rb') as f:
             self.train_task = pickle.load(f)
@@ -53,14 +54,15 @@ class trainer():
             self.valid_task = pickle.load(f)
 
     def setup(self):
-        cpus, mems, pfs, pss, pes = self.m_resource_config
+        cpus, mems, pfs, pss, pes, mips = self.m_resource_config
         self.cfg.cpus_max = max(cpus)
         self.cfg.mems_max = max(mems)
-        self.cfg.machine_configs = [MachineConfig(cpu_capacity=cpu, 
-                                 memory_capacity=mem_disk, 
-                                 disk_capacity=mem_disk,
-                                 pf=pf, ps=ps, pe=pe) for cpu, mem_disk, pf, ps, pe in zip(cpus,\
-                mems, pfs, pss, pes)]
+        self.cfg.machine_configs = [MachineConfig(cpu_capacity=cpu,
+                            memory_capacity=mem_disk,
+                            disk_capacity=mem_disk,
+                            pf=pf, ps=ps, pe=pe,
+                                     mips = mips) for cpu, mem_disk, pf, ps, pe, mips in zip(cpus,\
+        mems, pfs, pss, pes, mips)]
 
         wandb.init(project='cloud')
         wandb.run.name = self.name
@@ -145,7 +147,7 @@ if __name__ == '__main__':
     # torch.backends.cudnn.benchmark = False
     # torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     # epoch
     epoch = 100
     
@@ -154,13 +156,13 @@ if __name__ == '__main__':
     valid_len = 5
     job_len = 3
 
-    model_name = 'fit'
+    model_name = 'matrix'
     
     if model_name == 'matrix':
         # base parm
         cfg = matrix_config()
         cfg.model_name = model_name
-        cfg.model_params['skip'] = False
+        cfg.model_params['skip'] = True
 
         # epoch
         cfg.epoch = epoch
@@ -178,7 +180,7 @@ if __name__ == '__main__':
         cfg.model_params['MMHA'] = 'depth'
 
         # model_name/epoch/train_len/valid_len/job_len/TMHA/MMHA/seed
-        cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}_skip.pth'.format(
+        cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}_skip2.pth'.format(
                                                                 cfg.model_name,
                                                                 cfg.epoch,
                                                                 cfg.train_len,
