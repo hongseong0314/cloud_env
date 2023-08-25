@@ -130,6 +130,16 @@ class trainer():
         sub = np.array([t.submit_time for t in job])
         job = job[np.argsort(sub)]
         self.cfg.task_configs = job
+        
+        tasks = np.vstack([j.tasks for j in job])
+        cpu, mem, disk, duration, ins_num = tasks.mean(axis=0)
+        print("train cpu : {} \
+              mem : {:.4f} \
+              disk : {} \
+              duration : {:.4f} \
+              ins num : {} \
+              task num : {}".format(
+                cpu, mem, disk, duration, ins_num, len(tasks)))
         loss, clock, energy = self.roll_out()
 
         losses.append(loss)
