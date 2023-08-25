@@ -48,12 +48,17 @@ class trainer():
                                     [0.9569,0.7257,1.5767,0.7119,1.5324],
                                     [1.5,1.3,0.5,1.0,0.8]]
 
-        with open('./train.pkl', 'rb') as f:
-            self.train_task = pickle.load(f)
-        with open('./valid.pkl', 'rb') as f:
-            self.valid_task = pickle.load(f)
-
     def setup(self):
+        with open('./train_job.pickle', 'rb') as f:
+            jobs = pickle.load(f)
+
+        shuffled = np.random.permutation(len(jobs))
+        self.train_task = jobs[shuffled][7:]
+        self.valid_task = jobs[shuffled][:7]
+        sub = np.array([t.submit_time for t in self.valid_task])
+        self.valid_task = self.valid_task[np.argsort(sub)]
+
+
         cpus, mems, pfs, pss, pes, mips = self.m_resource_config
         self.cfg.cpus_max = max(cpus)
         self.cfg.mems_max = max(mems)
@@ -83,8 +88,6 @@ class trainer():
                                    valid_clock=valid_clock,
                                    valid_energy=valid_energy,)
 
-                # self.cfg.file.write(f"loss : {loss}, clock : {valid_clock}, energy : {valid_energy}\n")
-
                 wandb.log({"Training loss": loss,
                            "Training clock": clock,
                            "Training energy": energy,
@@ -95,7 +98,7 @@ class trainer():
     def roll_out(self):
         clock_list, energy_list = [], []
 
-        for _ in range(6):
+        for _ in range(12):
             random.shuffle(self.cfg.machine_configs)
             algorithm = self.algorithm(self.agent)
             sim = Env(self.cfg)
@@ -106,21 +109,24 @@ class trainer():
             clock_list.append(sim.time)
             energy_list.append(eg)
             print(sim.step_count)
-            # self.cfg.file.write(f"{sim.step_count} \n")
 
         loss = self.agent.update_parameters()
         return loss, np.mean(clock_list), np.mean(energy_list)
     
     def training(self):
+        torch.cuda.empty_cache()
         losses, clocks, energys = [], [], []
         self.agent.model.train()
-        for i in range(self.cfg.job_len, len(self.train_task))[:self.cfg.train_len]:
-            torch.cuda.empty_cache()
-            self.cfg.task_configs = copy.deepcopy(self.train_task[i-self.cfg.job_len:i])
-            loss, clock, energy = self.roll_out()
-            losses.append(loss)
-            clocks.append(clock)
-            energys.append(energy)
+        job = copy.deepcopy(np.random.choice(self.train_task, 
+                                             size=self.cfg.job_len, replace=False))
+        sub = np.array([t.submit_time for t in job])
+        job = job[np.argsort(sub)]
+        self.cfg.task_configs = job
+        loss, clock, energy = self.roll_out()
+
+        losses.append(loss)
+        clocks.append(clock)
+        energys.append(energy)
         return np.mean(losses), np.mean(clocks), np.mean(energys)
 
     def valiing(self):
@@ -154,8 +160,8 @@ if __name__ == '__main__':
     epoch = 100
     
     # job len
-    train_len = 10
-    valid_len = 5
+    train_len = 3000
+    valid_len = 7
     job_len = 3
 
     model_name = 'matrix'
