@@ -46,9 +46,8 @@ class Env(object):
 
         # job time reset
         if self.task_configs[0].submit_time != 0:
-            init_job_time = self.task_configs[0].submit_time
-            for task in self.task_configs:
-                task.submit_time -= init_job_time
+            self.task_configs[0].submit_time = 0
+         
 
     def arrived_job_check(self):
         while self.task_configs[self.job_pointer].submit_time <= self.time:
@@ -100,8 +99,12 @@ class Env(object):
                 self.arrived_job_check()
             self.parallel_rollout(decision_maker)
             self.total_energy_consumptipn += sum([m.energy_consumption() for m in self.machines])
-            
+        
             self.time += 1
+
+            if self.time >= 2000:
+                self.total_energy_consumptipn = 2000 * 2000
+                break
 
     def state_update(self):
         ## machone update
