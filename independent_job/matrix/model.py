@@ -26,9 +26,9 @@ class BGC():
                                                   map_location=self.device))
             self.model.eval()
 
-        self.logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
-        self.logpa_list = torch.zeros(size=(1, 0)).to(cfg.device)
-        self.reward_list = []
+        # self.logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
+        # self.logpa_list = torch.zeros(size=(1, 0)).to(cfg.device)
+        # self.reward_list = []
 
     def trajectory(self, reward):
         self.logpa_sum_list = torch.cat((self.logpa_sum_list, self.logpa_list.sum(dim=-1)[None, ...]), dim=-1)
@@ -60,20 +60,20 @@ class BGC():
             # [B,] 
             logpa = dist.log_prob(task_selected)
             # [B,]
-            self.logpa_list = torch.cat((self.logpa_list, logpa[None, ...]), dim=-1)
-            return task_selected.item()
+            # self.logpa_list = torch.cat((self.logpa_list, logpa[None, ...]), dim=-1)
+            return task_selected.item(), logpa
 
         else:
             with torch.no_grad():
                probs = \
                         self.model(machine_feature, task_feature, D_TM, ninf_mask)
             task_selected = probs.argmax(dim=1)
-            return task_selected.item()
+            return task_selected.item(), None
 
-    def update_parameters(self):
-        rewards = torch.tensor(self.reward_list).to(self.device)
+    def update_parameters(self, logpa_sum_list, rewards):
+        # rewards = torch.tensor(reward_list).to(self.device)
         advantage = rewards - rewards.float().mean()
-        loss = -advantage * self.logpa_sum_list
+        loss = -advantage * logpa_sum_list
         loss_mean = loss.mean()
 
         self.model.zero_grad()
@@ -82,9 +82,7 @@ class BGC():
 
         self.model_save()
 
-        self.reward_list = []
-        self.logpa_sum_list = torch.zeros(size=(1, 0)).to(self.device)
-        return loss_mean.item()
+        return loss_mean.detach().cpu().numpy()
 
 class CloudMatrixModel(nn.Module):
     def __init__(self, **model_params):

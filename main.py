@@ -97,20 +97,28 @@ class trainer():
             
     def roll_out(self):
         clock_list, energy_list = [], []
-
+        logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
+        reward_list = []
         for _ in range(12):
             random.shuffle(self.cfg.machine_configs)
             algorithm = self.algorithm(self.agent)
             sim = Env(self.cfg)
             sim.setup()
             sim.episode(algorithm)
+
+            logpa_sum_list = torch.cat((logpa_sum_list, 
+                                        algorithm.logpa_list.sum(dim=-1)[None, ...]), 
+                                        dim=-1)
+        
             eg = sim.total_energy_consumptipn
-            self.agent.trajectory(-eg)
+            # self.agent.trajectory(-eg)
+            reward_list.append(-eg)
+            
             clock_list.append(sim.time)
             energy_list.append(eg)
             # print(sim.step_count)
-
-        loss = self.agent.update_parameters()
+        rewards = torch.tensor(reward_list).to(self.device)
+        loss = self.agent.update_parameters(logpa_sum_list, rewards)
         return loss, np.mean(clock_list), np.mean(energy_list)
     
     def training(self):
