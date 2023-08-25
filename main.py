@@ -117,7 +117,7 @@ class trainer():
             clock_list.append(sim.time)
             energy_list.append(eg)
             # print(sim.step_count)
-        rewards = torch.tensor(reward_list).to(self.device)
+        rewards = torch.tensor(reward_list).to(self.cfg.device)
         loss = self.agent.update_parameters(logpa_sum_list, rewards)
         return loss, np.mean(clock_list), np.mean(energy_list)
     
@@ -163,7 +163,7 @@ if __name__ == '__main__':
     # torch.backends.cudnn.benchmark = False
     # torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
     # epoch
     epoch = 100
     
@@ -172,7 +172,7 @@ if __name__ == '__main__':
     valid_len = 7
     job_len = 3
 
-    model_name = 'fit'
+    model_name = 'matrix'
     
     if model_name == 'matrix':
         # base parm
@@ -192,8 +192,8 @@ if __name__ == '__main__':
         cfg.model_params['device'] = cfg.device
 
         # encoder type
-        cfg.model_params['TMHA'] = 'mix'
-        cfg.model_params['MMHA'] = 'mix'
+        cfg.model_params['TMHA'] = 'depth'
+        cfg.model_params['MMHA'] = 'depth'
 
         # model_name/epoch/train_len/valid_len/job_len/TMHA/MMHA/seed
         cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}_eng.pth'.format(
