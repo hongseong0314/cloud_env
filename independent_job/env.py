@@ -30,6 +30,7 @@ class Env(object):
 
         self.total_energy_consumptipn = 0
 
+        self.step_count = 0
     def setup(self):
         self.machines = [Machine(mc) for mc in self.machine_configs]
         self.job_done = False
@@ -79,6 +80,7 @@ class Env(object):
             machine_num, task_num = decision_maker(self.step_state)
 
             if machine_num == None and task_num == None:
+                self.step_count += 1 
                 break
             else:
                 cpu, mem, duration = self.task_full_feature[0, task_num, [0, 1, 3]]
@@ -86,6 +88,8 @@ class Env(object):
                                     dtype=torch.float32)[None, ...]
                 self.machines[machine_num].allocation(task)
                 self.task_full_feature[0, task_num, -2] -= 1
+
+                self.step_count += 1
             
 
     def episode(self, decision_maker):

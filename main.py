@@ -83,7 +83,7 @@ class trainer():
                                    valid_clock=valid_clock,
                                    valid_energy=valid_energy,)
 
-                self.cfg.file.write(f"loss : {loss}, clock : {valid_clock}, energy : {valid_energy}\n")
+                # self.cfg.file.write(f"loss : {loss}, clock : {valid_clock}, energy : {valid_energy}\n")
 
                 wandb.log({"Training loss": loss,
                            "Training clock": clock,
@@ -96,7 +96,7 @@ class trainer():
         clock_list, energy_list = [], []
 
         for _ in range(6):
-            random.shuffle(cfg.machine_configs)
+            random.shuffle(self.cfg.machine_configs)
             algorithm = self.algorithm(self.agent)
             sim = Env(self.cfg)
             sim.setup()
@@ -105,6 +105,8 @@ class trainer():
             self.agent.trajectory(-eg)
             clock_list.append(sim.time)
             energy_list.append(eg)
+            print(sim.step_count)
+            # self.cfg.file.write(f"{sim.step_count} \n")
 
         loss = self.agent.update_parameters()
         return loss, np.mean(clock_list), np.mean(energy_list)
@@ -147,7 +149,7 @@ if __name__ == '__main__':
     # torch.backends.cudnn.benchmark = False
     # torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     # epoch
     epoch = 100
     
@@ -162,7 +164,7 @@ if __name__ == '__main__':
         # base parm
         cfg = matrix_config()
         cfg.model_name = model_name
-        cfg.model_params['skip'] = True
+        cfg.model_params['skip'] = False
 
         # epoch
         cfg.epoch = epoch
@@ -180,7 +182,7 @@ if __name__ == '__main__':
         cfg.model_params['MMHA'] = 'depth'
 
         # model_name/epoch/train_len/valid_len/job_len/TMHA/MMHA/seed
-        cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}_skip2.pth'.format(
+        cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}_step_check.pth'.format(
                                                                 cfg.model_name,
                                                                 cfg.epoch,
                                                                 cfg.train_len,
@@ -215,7 +217,7 @@ if __name__ == '__main__':
                                                                 SEED)
 
     # model_name
-    file_name = "depth.txt"
+    file_name = "{}.txt".format(model_name)
     with open(file_name, "a") as file:
         cfg.file = file
         st = time.time()

@@ -78,16 +78,16 @@ class Qnet(torch.nn.Module):
         super(Qnet, self).__init__()
 
         self.feature_extract = torch.nn.Sequential(
-            torch.nn.Linear(model_params['nT'] + model_params['nM'] + 1, 32),
+            torch.nn.Linear(model_params['nT'] + model_params['nM'] + 1, 3),
             torch.nn.Tanh(),
-            torch.nn.Linear(32, 64),
+            torch.nn.Linear(3, 9),
             torch.nn.Tanh(),
-            torch.nn.Linear(64, 64),
+            torch.nn.Linear(9, 18),
             torch.nn.Tanh(),
-            torch.nn.Linear(64, 32),
+            torch.nn.Linear(18, 9),
             torch.nn.Tanh(),
         )
-        self.FC = torch.nn.Linear(32, 1)
+        self.FC = torch.nn.Linear(9, 1)
         self.initialize_weights()
     
     def initialize_weights(self):
