@@ -26,9 +26,9 @@ class BGC():
                                                   map_location=self.device))
             self.model.eval()
 
-        # self.logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
-        # self.logpa_list = torch.zeros(size=(1, 0)).to(cfg.device)
-        # self.reward_list = []
+        self.logpa_sum_list = torch.zeros(size=(1, 0)).to(self.device)
+        self.logpa_list = torch.zeros(size=(1, 0)).to(self.device)
+        self.reward_list = []
 
     def trajectory(self, reward):
         self.logpa_sum_list = torch.cat((self.logpa_sum_list, self.logpa_list.sum(dim=-1)[None, ...]), dim=-1)
@@ -60,20 +60,20 @@ class BGC():
             # [B,] 
             logpa = dist.log_prob(task_selected)
             # [B,]
-            # self.logpa_list = torch.cat((self.logpa_list, logpa[None, ...]), dim=-1)
-            return task_selected.item(), logpa
+            self.logpa_list = torch.cat((self.logpa_list, logpa[None, ...]), dim=-1)
+            return task_selected.item()
 
         else:
             with torch.no_grad():
                probs = \
                         self.model(machine_feature, task_feature, D_TM, ninf_mask)
             task_selected = probs.argmax(dim=1)
-            return task_selected.item(), None
+            return task_selected.item()
 
-    def update_parameters(self, logpa_sum_list, rewards):
-        # rewards = torch.tensor(reward_list).to(self.device)
+    def update_parameters(self):
+        rewards = torch.tensor(self.reward_list).to(self.device)
         advantage = rewards - rewards.float().mean()
-        loss = -advantage * logpa_sum_list
+        loss = -advantage * self.logpa_sum_list
         loss_mean = loss.mean()
 
         self.model.zero_grad()
@@ -82,7 +82,86 @@ class BGC():
 
         self.model_save()
 
+        self.reward_list = []
+        self.logpa_sum_list = torch.zeros(size=(1, 0)).to(self.device)
         return loss_mean.detach().cpu().numpy()
+
+# class BGC():
+#     def __init__(self, cfg):
+#         self.device = cfg.model_params['device']
+#         self.gamma = 0.999
+#         self.model = CloudMatrixModel(**cfg.model_params).to(self.device)
+#         self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])
+#         self.scheduler = Scheduler(self.optimizer, **cfg.optimizer_params['scheduler'])
+#         self.save_path = cfg.model_params['save_path']
+#         self.load_path = cfg.model_params['load_path']
+#         self.skip = cfg.model_params['skip']
+#         self.machine_num = cfg.machines_number
+
+        
+#         if self.load_path:
+#             print(f"load weight : {self.load_path}")
+#             self.model.load_state_dict(torch.load(cfg.model_params['load_path'],
+#                                                   map_location=self.device))
+#             self.model.eval()
+
+#         # self.logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
+#         # self.logpa_list = torch.zeros(size=(1, 0)).to(cfg.device)
+#         # self.reward_list = []
+
+#     def trajectory(self, reward):
+#         self.logpa_sum_list = torch.cat((self.logpa_sum_list, self.logpa_list.sum(dim=-1)[None, ...]), dim=-1)
+#         self.reward_list.append(reward)
+
+#         self.logpa_list = torch.zeros(size=(1, 0)).to(self.device)
+
+#     def model_save(self):
+#         torch.save(self.model.state_dict(), self.save_path)
+
+#     def decision(self, machine_feature, task_feature, D_TM, ninf_mask):
+#         machine_feature = machine_feature.to(self.device)
+#         task_feature = task_feature.to(self.device)
+#         D_TM = D_TM.to(self.device)
+        
+#         if self.skip:
+#             skip_mask = torch.zeros(size=(1, self.machine_num, 1))
+#             ninf_mask = torch.cat((skip_mask, ninf_mask), dim=2)
+#             ninf_mask = ninf_mask.to(self.device)
+#         else:
+#             ninf_mask = ninf_mask.to(self.device)
+        
+#         if self.model.training:
+#             probs = \
+#                     self.model(machine_feature, task_feature, D_TM, ninf_mask)
+#             # [B, M*T]
+#             dist = torch.distributions.Categorical(probs)
+#             task_selected = dist.sample()
+#             # [B,] 
+#             logpa = dist.log_prob(task_selected)
+#             # [B,]
+#             # self.logpa_list = torch.cat((self.logpa_list, logpa[None, ...]), dim=-1)
+#             return task_selected.item(), logpa
+
+#         else:
+#             with torch.no_grad():
+#                probs = \
+#                         self.model(machine_feature, task_feature, D_TM, ninf_mask)
+#             task_selected = probs.argmax(dim=1)
+#             return task_selected.item(), None
+
+#     def update_parameters(self, logpa_sum_list, rewards):
+#         # rewards = torch.tensor(reward_list).to(self.device)
+#         advantage = rewards - rewards.float().mean()
+#         loss = -advantage * logpa_sum_list
+#         loss_mean = loss.mean()
+
+#         self.model.zero_grad()
+#         loss_mean.backward()
+#         self.optimizer.step()
+
+#         self.model_save()
+
+#         return loss_mean.detach().cpu().numpy()
 
 class CloudMatrixModel(nn.Module):
     def __init__(self, **model_params):

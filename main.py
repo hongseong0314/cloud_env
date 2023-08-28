@@ -5,6 +5,7 @@ import numpy as np
 import random
 import os
 import copy
+import gc
 # base
 from tqdm import tqdm
 from codes.job import Job
@@ -81,7 +82,7 @@ class trainer():
         with tqdm(range(self.cfg.epoch), unit="Run") as runing_bar:
             for i in runing_bar:
                 self.agent.scheduler.step()
-                loss, clock, energy = self.training()
+                loss, clock, energy = self.training(i)
                 valid_clock, valid_energy = self.valiing()
 
                 runing_bar.set_postfix(loss=loss,
@@ -97,54 +98,70 @@ class trainer():
             
     def roll_out(self):
         clock_list, energy_list = [], []
-        logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
-        reward_list = []
+        # logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
+        # reward_list = []
         for _ in range(12):
-            random.shuffle(self.cfg.machine_configs)
+            random.shuffle(cfg.machine_configs)
             algorithm = self.algorithm(self.agent)
             sim = Env(self.cfg)
             sim.setup()
             sim.episode(algorithm)
-
-            logpa_sum_list = torch.cat((logpa_sum_list, 
-                                        algorithm.logpa_list.sum(dim=-1)[None, ...]), 
-                                        dim=-1)
-        
             eg = sim.total_energy_consumptipn
-            # self.agent.trajectory(-eg)
-            reward_list.append(-eg)
-            
+            self.agent.trajectory(-eg)
             clock_list.append(sim.time)
             energy_list.append(eg)
-            # print(sim.step_count)
-        rewards = torch.tensor(reward_list).to(self.cfg.device)
-        loss = self.agent.update_parameters(logpa_sum_list, rewards)
+
+        loss = self.agent.update_parameters()
+        #     random.shuffle(self.cfg.machine_configs)
+        #     algorithm = self.algorithm(self.agent)
+        #     sim = Env(self.cfg)
+        #     sim.setup()
+        #     sim.episode(algorithm)
+
+        #     logpa_sum_list = torch.cat((logpa_sum_list, 
+        #                                 algorithm.logpa_list.sum(dim=-1)[None, ...]), 
+        #                                 dim=-1)
+        
+        #     eg = sim.total_energy_consumptipn
+        #     # self.agent.trajectory(-eg)
+        #     reward_list.append(-eg)
+            
+        #     clock_list.append(sim.time)
+        #     energy_list.append(eg)
+        #     # print(sim.step_count)
+        # rewards = torch.tensor(reward_list).to(self.cfg.device)
+        # loss = self.agent.update_parameters(logpa_sum_list, rewards)
         return loss, np.mean(clock_list), np.mean(energy_list)
     
-    def training(self):
-        torch.cuda.empty_cache()
-        losses, clocks, energys = [], [], []
-        self.agent.model.train()
-        job = copy.deepcopy(np.random.choice(self.train_task, 
-                                             size=self.cfg.job_len, replace=False))
-        sub = np.array([t.submit_time for t in job])
-        job = job[np.argsort(sub)]
-        self.cfg.task_configs = job
-        
-        tasks = np.vstack([j.tasks for j in job])
+    def training(self, epoch):
+        while True:
+            job = copy.deepcopy(np.random.choice(self.train_task, 
+                                                size=self.cfg.job_len, replace=False))
+            sub = np.array([t.submit_time for t in job])
+            job = job[np.argsort(sub)]
+            self.cfg.task_configs = job
+            
+            tasks = np.vstack([j.tasks for j in job])
+            if len(tasks) > 0:
+                break
         cpu, mem, disk, duration, ins_num = tasks.mean(axis=0)
-        print("train cpu : {} \
+        print("epoch : {} train cpu : {} \
               mem : {:.4f} \
               disk : {} \
               duration : {:.4f} \
               ins num : {} \
-              task num : {}".format(
-                cpu, mem, disk, duration, ins_num, len(tasks)))
+              task num : {}".format(epoch,\
+                                     cpu, mem, disk, duration, ins_num, len(tasks)))
+        
+        losses, clocks, energys = [], [], []
+        self.agent.model.train()
+        torch.cuda.empty_cache()
         loss, clock, energy = self.roll_out()
 
         losses.append(loss)
         clocks.append(clock)
         energys.append(energy)
+        gc.collect()
         return np.mean(losses), np.mean(clocks), np.mean(energys)
 
     def valiing(self):
@@ -173,9 +190,9 @@ if __name__ == '__main__':
     # torch.backends.cudnn.benchmark = False
     # torch.backends.cudnn.deterministic = True
 
-    os.environ['CUDA_VISIBLE_DEVICES'] = '1'
+    os.environ['CUDA_VISIBLE_DEVICES'] = '0'
     # epoch
-    epoch = 100
+    epoch = 300
     
     # job len
     train_len = 3000
@@ -202,8 +219,8 @@ if __name__ == '__main__':
         cfg.model_params['device'] = cfg.device
 
         # encoder type
-        cfg.model_params['TMHA'] = 'depth'
-        cfg.model_params['MMHA'] = 'depth'
+        cfg.model_params['TMHA'] = 'mix'
+        cfg.model_params['MMHA'] = 'mix'
 
         # model_name/epoch/train_len/valid_len/job_len/TMHA/MMHA/seed
         cfg.model_params['save_path'] = '{}_{}_{}_{}_{}_{}_{}_{}_eng.pth'.format(
