@@ -31,6 +31,7 @@ class Env(object):
         self.total_energy_consumptipn = 0
 
         self.step_count = 0
+
     def setup(self):
         self.machines = [Machine(mc) for mc in self.machine_configs]
         self.job_done = False
@@ -47,7 +48,6 @@ class Env(object):
         # job time reset
         if self.task_configs[0].submit_time != 0:
             self.task_configs[0].submit_time = 0
-         
 
     def arrived_job_check(self):
         while self.task_configs[self.job_pointer].submit_time <= self.time:
@@ -102,8 +102,8 @@ class Env(object):
         
             self.time += 1
 
-            if self.time >= 700:
-                self.total_energy_consumptipn = 700 * 2000
+            if (decision_maker.agent.model.train) and (self.time >= 600):
+                self.total_energy_consumptipn = 600 * self.cfg.max_enenrgy
                 break
 
     def state_update(self):

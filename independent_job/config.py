@@ -13,7 +13,7 @@ def matrix_config():
     cfg.model_params = {
                         'embedding_dim': 64,
                         'sqrt_embedding_dim': 64**(1/2),
-                        'encoder_layer_num': 6,
+                        'encoder_layer_num': 3,
                         'qkv_dim': 8,
                         'sqrt_qkv_dim': 8**(1/2),
                         'head_num': 8,
@@ -27,9 +27,9 @@ def matrix_config():
                         'depth__init':(1/2)**(1/2),
                         'FC_init':(1/4)**(1/2),
 
-                        'ms_hidden_dim': 6,
+                        'ms_hidden_dim': 5,
                         'ms_layer1_init': (1/2)**(1/2),
-                        'ms_layer2_init': (1/6)**(1/2),
+                        'ms_layer2_init': (1/5)**(1/2),
 
                         'save_path' : None,
                         'load_path' : None,
