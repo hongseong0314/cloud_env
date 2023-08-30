@@ -1,3 +1,4 @@
+import torch
 class RandomAlgorithm:
     def __init__(self):
         pass
