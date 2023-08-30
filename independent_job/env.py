@@ -104,7 +104,7 @@ class Env(object):
             self.time += 1
 
             if self.time >= 600:
-                self.total_energy_consumptipn = 600 * self.max_enenrgy
+                self.total_energy_consumptipn = 600 * self.max_energy
                 break
 
     def state_update(self):
