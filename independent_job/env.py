@@ -31,6 +31,7 @@ class Env(object):
         self.total_energy_consumptipn = 0
 
         self.step_count = 0
+        self.max_enenrgy = cfg.max_enenrgy
 
     def setup(self):
         self.machines = [Machine(mc) for mc in self.machine_configs]
@@ -102,8 +103,8 @@ class Env(object):
         
             self.time += 1
 
-            if (decision_maker.agent.model.train) and (self.time >= 600):
-                self.total_energy_consumptipn = 600 * self.cfg.max_enenrgy
+            if self.time >= 600:
+                self.total_energy_consumptipn = 600 * self.max_enenrgy
                 break
 
     def state_update(self):
@@ -176,3 +177,6 @@ class Env(object):
             features[:, 10] = features[:, 10] * features[:, 6]
             # cpu, mem, energy, cpu, mem, disk, duration, inster
             self.step_state.machine_feature = features[:, [0,1,5,7,8,9,10,11]].clone()
+
+        elif self.model_name == 'random':
+            pass
