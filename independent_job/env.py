@@ -31,7 +31,7 @@ class Env(object):
         self.total_energy_consumptipn = 0
 
         self.step_count = 0
-        self.max_enenrgy = cfg.max_enenrgy
+        self.max_energy = cfg.max_energy
 
     def setup(self):
         self.machines = [Machine(mc) for mc in self.machine_configs]
