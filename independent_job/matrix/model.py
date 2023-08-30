@@ -3,14 +3,12 @@ import torch.nn as nn
 import torch.nn.functional as F
 from independent_job.matrix.sub_model import *
 
-import numpy as np
 from torch.optim import Adam as Optimizer
 from torch.optim.lr_scheduler import MultiStepLR as Scheduler
 
 class BGC():
     def __init__(self, cfg):
         self.device = cfg.model_params['device']
-        self.gamma = 0.999
         self.model = CloudMatrixModel(**cfg.model_params).to(self.device)
         self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])
         self.scheduler = Scheduler(self.optimizer, **cfg.optimizer_params['scheduler'])
@@ -28,13 +26,19 @@ class BGC():
 
         self.logpa_sum_list = torch.zeros(size=(1, 0)).to(self.device)
         self.logpa_list = torch.zeros(size=(1, 0)).to(self.device)
+
+        self.entropy_sum_list = torch.zeros(size=(1, 0)).to(self.device)
+        self.entropy_list = torch.zeros(size=(1, 0)).to(self.device)
         self.reward_list = []
 
     def trajectory(self, reward):
         self.logpa_sum_list = torch.cat((self.logpa_sum_list, self.logpa_list.sum(dim=-1)[None, ...]), dim=-1)
+        self.entropy_sum_list = torch.cat((self.entropy_sum_list, self.entropy_list.sum(dim=-1)[None, ...]), dim=-1)
+        
         self.reward_list.append(reward)
 
         self.logpa_list = torch.zeros(size=(1, 0)).to(self.device)
+        self.entropy_list = torch.zeros(size=(1, 0)).to(self.device)
 
     def model_save(self):
         torch.save(self.model.state_dict(), self.save_path)
@@ -60,108 +64,39 @@ class BGC():
             # [B,] 
             logpa = dist.log_prob(task_selected)
             # [B,]
+            entropies = dist.entropy()
+
             self.logpa_list = torch.cat((self.logpa_list, logpa[None, ...]), dim=-1)
-            return task_selected.item()
+            self.entropy_list = torch.cat((self.entropy_list, entropies[None, ...]), dim=-1)
+
+            return task_selected.detach().cpu().item()
 
         else:
             with torch.no_grad():
                probs = \
                         self.model(machine_feature, task_feature, D_TM, ninf_mask)
             task_selected = probs.argmax(dim=1)
-            return task_selected.item()
+            return task_selected.detach().cpu().item()
 
     def update_parameters(self):
         rewards = torch.tensor(self.reward_list).to(self.device)
         advantage = rewards - rewards.float().mean()
-        loss = -advantage * self.logpa_sum_list
-        loss_mean = loss.mean()
+        policy_loss = -advantage * self.logpa_sum_list
+        entropy_loss = (-self.entropy_sum_list * 0.001)
+        # loss_entro = loss + (-self.entropy_sum_list * 0.01)
+        loss_mean = (policy_loss+entropy_loss).mean()
 
-        self.model.zero_grad()
+        self.optimizer.zero_grad()
         loss_mean.backward()
         self.optimizer.step()
 
         self.model_save()
+        print(f"policy : {policy_loss.detach().cpu().numpy()}, entropy : {entropy_loss.detach().cpu().numpy()}")
 
         self.reward_list = []
         self.logpa_sum_list = torch.zeros(size=(1, 0)).to(self.device)
+        self.entropy_sum_list = torch.zeros(size=(1, 0)).to(self.device)
         return loss_mean.detach().cpu().numpy()
-
-# class BGC():
-#     def __init__(self, cfg):
-#         self.device = cfg.model_params['device']
-#         self.gamma = 0.999
-#         self.model = CloudMatrixModel(**cfg.model_params).to(self.device)
-#         self.optimizer = Optimizer(self.model.parameters(), **cfg.optimizer_params['optimizer'])
-#         self.scheduler = Scheduler(self.optimizer, **cfg.optimizer_params['scheduler'])
-#         self.save_path = cfg.model_params['save_path']
-#         self.load_path = cfg.model_params['load_path']
-#         self.skip = cfg.model_params['skip']
-#         self.machine_num = cfg.machines_number
-
-        
-#         if self.load_path:
-#             print(f"load weight : {self.load_path}")
-#             self.model.load_state_dict(torch.load(cfg.model_params['load_path'],
-#                                                   map_location=self.device))
-#             self.model.eval()
-
-#         # self.logpa_sum_list = torch.zeros(size=(1, 0)).to(cfg.device)
-#         # self.logpa_list = torch.zeros(size=(1, 0)).to(cfg.device)
-#         # self.reward_list = []
-
-#     def trajectory(self, reward):
-#         self.logpa_sum_list = torch.cat((self.logpa_sum_list, self.logpa_list.sum(dim=-1)[None, ...]), dim=-1)
-#         self.reward_list.append(reward)
-
-#         self.logpa_list = torch.zeros(size=(1, 0)).to(self.device)
-
-#     def model_save(self):
-#         torch.save(self.model.state_dict(), self.save_path)
-
-#     def decision(self, machine_feature, task_feature, D_TM, ninf_mask):
-#         machine_feature = machine_feature.to(self.device)
-#         task_feature = task_feature.to(self.device)
-#         D_TM = D_TM.to(self.device)
-        
-#         if self.skip:
-#             skip_mask = torch.zeros(size=(1, self.machine_num, 1))
-#             ninf_mask = torch.cat((skip_mask, ninf_mask), dim=2)
-#             ninf_mask = ninf_mask.to(self.device)
-#         else:
-#             ninf_mask = ninf_mask.to(self.device)
-        
-#         if self.model.training:
-#             probs = \
-#                     self.model(machine_feature, task_feature, D_TM, ninf_mask)
-#             # [B, M*T]
-#             dist = torch.distributions.Categorical(probs)
-#             task_selected = dist.sample()
-#             # [B,] 
-#             logpa = dist.log_prob(task_selected)
-#             # [B,]
-#             # self.logpa_list = torch.cat((self.logpa_list, logpa[None, ...]), dim=-1)
-#             return task_selected.item(), logpa
-
-#         else:
-#             with torch.no_grad():
-#                probs = \
-#                         self.model(machine_feature, task_feature, D_TM, ninf_mask)
-#             task_selected = probs.argmax(dim=1)
-#             return task_selected.item(), None
-
-#     def update_parameters(self, logpa_sum_list, rewards):
-#         # rewards = torch.tensor(reward_list).to(self.device)
-#         advantage = rewards - rewards.float().mean()
-#         loss = -advantage * logpa_sum_list
-#         loss_mean = loss.mean()
-
-#         self.model.zero_grad()
-#         loss_mean.backward()
-#         self.optimizer.step()
-
-#         self.model_save()
-
-#         return loss_mean.detach().cpu().numpy()
 
 class CloudMatrixModel(nn.Module):
     def __init__(self, **model_params):
@@ -326,6 +261,122 @@ class EncodingBlock2(nn.Module):
         return out3
         # shape: (B, T, embedding)
 
+# class Matrix_Decoder(nn.Module):
+#     def __init__(self, **model_params):
+#         super().__init__()
+#         self.model_params = model_params
+#         self.skip = self.model_params['skip']
+#         embedding_dim = self.model_params['embedding_dim']
+#         head_num = self.model_params['head_num']
+#         qkv_dim = self.model_params['qkv_dim']
+ 
+#         # no job action shape : (1, 1, embedding_dim)
+#         self.Wq_1 = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+#         self.Wq_2 = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+#         self.Wq_3 = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+#         self.Wk = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+#         self.Wv = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
+
+#         self.multi_head_combine = nn.Linear(head_num * qkv_dim, embedding_dim)
+
+#         self.k = None  # saved key, for multi-head attention
+#         self.v = None  # saved value, for multi-head_attention
+#         self.single_head_key = None  # saved key, for single-head attention
+
+#         if self.skip:
+#             self.encoded_skip = nn.Parameter(torch.rand(1, 1, embedding_dim))
+
+#     def set_kv(self, encoded_jobs):
+#         # encoded_jobs.shape: (B, T, embedding)
+#         batch_size = encoded_jobs.size(0)
+#         embedding_dim = self.model_params['embedding_dim']
+#         head_num = self.model_params['head_num']
+
+#         if self.skip:
+#             encoded_skip = self.encoded_skip.expand(size=(batch_size, 1, embedding_dim))
+#             encoded_jobs = torch.cat((encoded_skip, encoded_jobs), dim=1)
+        
+#         self.k = reshape_by_heads(self.Wk(encoded_jobs), head_num=head_num)
+#         self.v = reshape_by_heads(self.Wv(encoded_jobs), head_num=head_num)
+#         # shape: (B, H, T, qkv_dim)
+#         self.single_head_key = encoded_jobs.transpose(1, 2)
+#         # shape: (B, embedding, T)
+
+#     def forward(self, encoded_machine, encoded_jobs, ninf_mask):
+#         # encoded_machine.shape: (B, J, embedding)
+#         # encoded_jobs.shape: (B, T, embedding)
+#         # ninf_mask.shape: (B, J, T)
+#         self.set_kv(encoded_jobs)
+#         if self.skip:
+#             task_num = encoded_jobs.size(1) + 1
+#         else:
+#             task_num = encoded_jobs.size(1)
+#         machine_num = encoded_machine.size(1)
+#         sqrt_embedding_dim = self.model_params['sqrt_embedding_dim']
+#         logit_clipping = self.model_params['logit_clipping']
+#         head_num = self.model_params['head_num']
+
+#         #  Multi-Head Attention
+#         #######################################################
+#         q = reshape_by_heads(self.Wq_3(encoded_machine), head_num=head_num)
+#         # shape: (B, H, M, qkv_dim)
+
+#         out_concat = self._multi_head_attention_for_decoder(q, self.k, self.v)
+#         # shape: (B, M, H*qkv_dim)
+
+#         mh_atten_out = self.multi_head_combine(out_concat)
+#         # shape: (B, M, embedding)
+
+#         #  Single-Head Attention, for probability calculation
+#         #######################################################
+#         score = torch.matmul(mh_atten_out, self.single_head_key)
+#         # shape: (B, M, T)
+
+#         score_scaled = score / sqrt_embedding_dim
+#         # shape: (B, M, T)
+
+#         score_clipped = logit_clipping * torch.tanh(score_scaled)
+
+#         score_masked = score_clipped + ninf_mask
+#         score_masked = score_masked.reshape(-1, machine_num * task_num)
+
+#         probs = F.softmax(score_masked, dim=1)
+#         # probs = F.log_softmax(score_masked, dim=1)
+#         # shape: (B, M*T)
+
+#         return probs
+
+#     def _multi_head_attention_for_decoder(self, q, k, v):
+#         # q shape: (B, H, M, qkv_dim)   :
+#         # k,v shape: (B, H, T, qkv_dim)
+#         # rank2_ninf_mask.shape: (B, T)
+#         # rank3_ninf_mask.shape: (B, M, T)
+
+#         batch_size = q.size(0)
+#         n = q.size(2)
+
+#         head_num = self.model_params['head_num']
+#         qkv_dim = self.model_params['qkv_dim']
+#         sqrt_qkv_dim = self.model_params['sqrt_qkv_dim']
+
+#         score = torch.matmul(q, k.transpose(2, 3))
+#         # shape: (B, H, M, T)
+
+#         score_scaled = score / sqrt_qkv_dim
+#         weights = nn.Softmax(dim=3)(score_scaled)
+#         # shape: (B, H, M, T)
+
+#         out = torch.matmul(weights, v)
+#         # shape: (B, H, M, qkv_dim)
+
+#         out_transposed = out.transpose(1, 2)
+#         # shape: (B, M, H, qkv_dim)
+
+#         out_concat = out_transposed.reshape(batch_size, n, head_num * qkv_dim)
+#         # shape: (B, M, H*qkv_dim)
+
+#         return out_concat
+
 class Matrix_Decoder(nn.Module):
     def __init__(self, **model_params):
         super().__init__()
@@ -343,6 +394,7 @@ class Matrix_Decoder(nn.Module):
         self.Wv = nn.Linear(embedding_dim, head_num * qkv_dim, bias=False)
 
         self.multi_head_combine = nn.Linear(head_num * qkv_dim, embedding_dim)
+        # self.G_t = nn.Linear(head_num * qkv_dim, 1)
 
         self.k = None  # saved key, for multi-head attention
         self.v = None  # saved value, for multi-head_attention
@@ -386,7 +438,7 @@ class Matrix_Decoder(nn.Module):
         q = reshape_by_heads(self.Wq_3(encoded_machine), head_num=head_num)
         # shape: (B, H, M, qkv_dim)
 
-        out_concat = self._multi_head_attention_for_decoder(q, self.k, self.v)
+        out_concat = self._multi_head_attention_for_decoder(q, self.k, self.v, ninf_mask)
         # shape: (B, M, H*qkv_dim)
 
         mh_atten_out = self.multi_head_combine(out_concat)
@@ -411,7 +463,7 @@ class Matrix_Decoder(nn.Module):
 
         return probs
 
-    def _multi_head_attention_for_decoder(self, q, k, v):
+    def _multi_head_attention_for_decoder(self, q, k, v, ninf_mask):
         # q shape: (B, H, M, qkv_dim)   :
         # k,v shape: (B, H, T, qkv_dim)
         # rank2_ninf_mask.shape: (B, T)
@@ -419,6 +471,7 @@ class Matrix_Decoder(nn.Module):
 
         batch_size = q.size(0)
         n = q.size(2)
+        m = k.size(2)
 
         head_num = self.model_params['head_num']
         qkv_dim = self.model_params['qkv_dim']
@@ -428,8 +481,17 @@ class Matrix_Decoder(nn.Module):
         # shape: (B, H, M, T)
 
         score_scaled = score / sqrt_qkv_dim
-        weights = nn.Softmax(dim=3)(score_scaled)
+        if ninf_mask is not None:
+            score_scaled = score_scaled + ninf_mask[:, None, :, :].expand(batch_size, head_num, n, m)
+
+        score_scaled = score_scaled.reshape(batch_size,  head_num, n*m)
+        weights = nn.Softmax(dim=2)(score_scaled)
+        # shape : (B, H, M*T)
+
+        # weights = nn.Softmax(dim=3)(score_scaled)
         # shape: (B, H, M, T)
+
+        weights = weights.reshape(batch_size, head_num, n, m)
 
         out = torch.matmul(weights, v)
         # shape: (B, H, M, qkv_dim)
